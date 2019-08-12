@@ -20,15 +20,20 @@ package main
 import (
 	"bytes"
 	"crypto/sha1"
+	"errors"
 	"flag"
 	"fmt"
-	"go/build"
 	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"reflect"
+	"runtime"
 	"strings"
+	"syscall"
 	"testing"
+
+	"gopkg.in/src-d/go-license-detector.v2/licensedb"
 )
 
 const fixtures = "fixtures"
@@ -101,62 +106,191 @@ func dcopy(src, dest string, info os.FileInfo) error {
 	return nil
 }
 
+var goModAnalyseFunc = genAnalyseFunc([]licensedb.Result{
+	{
+		Arg:     "github.com/hashicorp/multierror-go",
+		Matches: []licensedb.Match{{License: "MPL-2.0"}},
+	},
+	{
+		Arg:     "github.com/sirkon/goproxy",
+		Matches: []licensedb.Match{{License: "MIT"}},
+	},
+	{
+		Arg:     "gopkg.in/src-d/go-license-detector.v2",
+		Matches: []licensedb.Match{{License: "Apache-2.0"}},
+	},
+})
+
+func genAnalyseFunc(r []licensedb.Result) func(args ...string) []licensedb.Result {
+	return func(args ...string) []licensedb.Result { return r }
+}
+
 func Test_run(t *testing.T) {
-	type args struct {
-		args     []string
-		exclDirs []string
-		ext      string
-		dry      bool
-	}
 	tests := []struct {
 		name       string
-		args       args
+		args       runParams
 		want       int
-		wantErr    bool
+		err        error
 		wantOutput string
 		wantGolden bool
 	}{
 		{
-			name: "Run a diff prints a list of files that need the license header",
-			args: args{
+			name: "Run a diff prints a list of files that need the default license header",
+			args: runParams{
 				args:     []string{"testdata"},
-				exclDirs: defaultExludedDirs,
+				license:  defaultLicense,
+				licensor: defaultLicensor,
+				exclude:  []string{"excludedpath", "x-pack", "cloud"},
 				ext:      defaultExt,
 				dry:      true,
 			},
 			want: 1,
+			err:  &Error{code: 1},
 			wantOutput: `
-src/github.com/elastic/go-licenser/testdata/multilevel/doc.go: is missing the license header
-src/github.com/elastic/go-licenser/testdata/multilevel/main.go: is missing the license header
-src/github.com/elastic/go-licenser/testdata/multilevel/sublevel/autogen.go: is missing the license header
-src/github.com/elastic/go-licenser/testdata/multilevel/sublevel/doc.go: is missing the license header
-src/github.com/elastic/go-licenser/testdata/multilevel/sublevel/partial.go: is missing the license header
-src/github.com/elastic/go-licenser/testdata/singlelevel/doc.go: is missing the license header
-src/github.com/elastic/go-licenser/testdata/singlelevel/main.go: is missing the license header
-src/github.com/elastic/go-licenser/testdata/singlelevel/wrapper.go: is missing the license header
+testdata/multilevel/doc.go: is missing the license header
+testdata/multilevel/main.go: is missing the license header
+testdata/multilevel/sublevel/autogen.go: is missing the license header
+testdata/multilevel/sublevel/doc.go: is missing the license header
+testdata/multilevel/sublevel/partial.go: is missing the license header
+testdata/singlelevel/doc.go: is missing the license header
+testdata/singlelevel/main.go: is missing the license header
+testdata/singlelevel/wrapper.go: is missing the license header
+`[1:],
+		},
+		{
+			name: "Run a diff prints a list of files that need the default license header and notice",
+			args: runParams{
+				args:          []string{"testdata"},
+				license:       defaultLicense,
+				licensor:      defaultLicensor,
+				exclude:       []string{"excludedpath", "x-pack", "cloud"},
+				ext:           defaultExt,
+				dry:           true,
+				notice:        true,
+				noticeProject: "SomeProject",
+				analyseFunc:   goModAnalyseFunc,
+			},
+			want: 1,
+			err:  &Error{code: 1},
+			wantOutput: `
+testdata/multilevel/doc.go: is missing the license header
+testdata/multilevel/main.go: is missing the license header
+testdata/multilevel/sublevel/autogen.go: is missing the license header
+testdata/multilevel/sublevel/doc.go: is missing the license header
+testdata/multilevel/sublevel/partial.go: is missing the license header
+testdata/singlelevel/doc.go: is missing the license header
+testdata/singlelevel/main.go: is missing the license header
+testdata/singlelevel/wrapper.go: is missing the license header
+Dumping NOTICE to output...
+
+SomeProject
+Copyright 2019 Elasticsearch B.V.
+
+This product includes software developed at Elasticsearch B.V. and
+third-party software developed by the licenses listed below.
+
+=========================================================================
+
+gopkg.in/src-d/go-license-detector.v2    Apache-2.0
+github.com/sirkon/goproxy                MIT
+github.com/hashicorp/multierror-go       MPL-2.0
+
+=========================================================================
+`[1:],
+		},
+		{
+			name: "Run a diff prints a list of files that need the Elastic license header",
+			args: runParams{
+				args:     []string{"testdata"},
+				license:  "Elastic",
+				licensor: defaultLicensor,
+				ext:      defaultExt,
+				dry:      true,
+			},
+			want: 1,
+			err:  &Error{code: 1},
+			wantOutput: `
+testdata/cloud/doc.go: is missing the license header
+testdata/cloud/wrong.go: is missing the license header
+testdata/excludedpath/file.go: is missing the license header
+testdata/multilevel/doc.go: is missing the license header
+testdata/multilevel/main.go: is missing the license header
+testdata/multilevel/sublevel/autogen.go: is missing the license header
+testdata/multilevel/sublevel/doc.go: is missing the license header
+testdata/multilevel/sublevel/partial.go: is missing the license header
+testdata/singlelevel/doc.go: is missing the license header
+testdata/singlelevel/main.go: is missing the license header
+testdata/singlelevel/wrapper.go: is missing the license header
+testdata/singlelevel/zrapper.go: is missing the license header
+testdata/x-pack/wrong.go: is missing the license header
+`[1:],
+		},
+		{
+			name: "Run a diff prints a list of files that need the Cloud license header",
+			args: runParams{
+				args:     []string{"testdata"},
+				license:  "Cloud",
+				licensor: defaultLicensor,
+				ext:      defaultExt,
+				dry:      true,
+			},
+			want: 1,
+			err:  &Error{code: 1},
+			wantOutput: `
+testdata/cloud/wrong.go: is missing the license header
+testdata/excludedpath/file.go: is missing the license header
+testdata/multilevel/doc.go: is missing the license header
+testdata/multilevel/main.go: is missing the license header
+testdata/multilevel/sublevel/autogen.go: is missing the license header
+testdata/multilevel/sublevel/doc.go: is missing the license header
+testdata/multilevel/sublevel/partial.go: is missing the license header
+testdata/singlelevel/doc.go: is missing the license header
+testdata/singlelevel/main.go: is missing the license header
+testdata/singlelevel/wrapper.go: is missing the license header
+testdata/singlelevel/zrapper.go: is missing the license header
+testdata/x-pack/doc.go: is missing the license header
+testdata/x-pack/wrong.go: is missing the license header
 `[1:],
 		},
 		{
 			name: "Run against an unexisting dir fails",
-			args: args{
+			args: runParams{
 				args:     []string{"ignore"},
-				exclDirs: defaultExludedDirs,
+				license:  defaultLicense,
+				licensor: defaultLicensor,
 				ext:      defaultExt,
 				dry:      false,
 			},
-			want:    4,
-			wantErr: true,
+			want: 2,
+			err:  goosPathError(2, "ignore"),
 		},
 		{
-			name: "Run with default mode rewrites the source files",
-			args: args{
-				args:     []string{"testdata"},
-				exclDirs: defaultExludedDirs,
+			name: "Unknown license fails",
+			args: runParams{
+				args:     []string{"ignore"},
+				license:  "foo",
+				licensor: defaultLicensor,
 				ext:      defaultExt,
 				dry:      false,
 			},
+			want: 7,
+			err:  &Error{err: errors.New("unknown license: foo"), code: 7},
+		},
+		{
+			name: "Run with default mode rewrites the source files and notice",
+			args: runParams{
+				args:          []string{"testdata"},
+				license:       defaultLicense,
+				licensor:      defaultLicensor,
+				exclude:       []string{"excludedpath", "x-pack", "cloud"},
+				ext:           defaultExt,
+				dry:           false,
+				notice:        true,
+				noticeProject: "SomeProject",
+				analyseFunc:   goModAnalyseFunc,
+			},
 			want:       0,
-			wantErr:    false,
+			wantOutput: "Generating NOTICE file...\n\n",
 			wantGolden: true,
 		},
 	}
@@ -167,21 +301,25 @@ src/github.com/elastic/go-licenser/testdata/singlelevel/wrapper.go: is missing t
 			}
 
 			var buf = new(bytes.Buffer)
-			got, err := run(tt.args.args, tt.args.exclDirs, tt.args.ext, tt.args.dry, buf)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("run() error = %v, wantErr %v", err, tt.wantErr)
+			tt.args.out = buf
+			var err = run(tt.args)
+			if !reflect.DeepEqual(err, tt.err) {
+				t.Errorf("run() error = %v, wantErr %v", err, tt.err)
 				return
 			}
+
+			var got = Code(err)
 			if got != tt.want {
 				t.Errorf("run() = %v, want %v", got, tt.want)
 			}
 
-			gopath := os.Getenv("GOPATH")
-			if gopath == "" {
-				gopath = build.Default.GOPATH
+			var gotOutput = buf.String()
+			if so := strings.Split(tt.wantOutput, "Dumping"); len(so) > 1 {
+				tt.wantOutput = filepath.FromSlash(so[0]) + "Dumping" + so[1]
+			} else {
+				tt.wantOutput = filepath.FromSlash(tt.wantOutput)
 			}
-			gotOutput := strings.Replace(buf.String(), gopath, "", -1)
-			gotOutput = strings.Replace(gotOutput, "../", "", -1)
+
 			if gotOutput != tt.wantOutput {
 				t.Errorf("Output = \n%v\n want \n%v", gotOutput, tt.wantOutput)
 			}
@@ -189,7 +327,9 @@ src/github.com/elastic/go-licenser/testdata/singlelevel/wrapper.go: is missing t
 			if tt.wantGolden {
 				if *update {
 					copyFixtures(t, "golden")
-					if _, err := run([]string{"golden"}, tt.args.exclDirs, tt.args.ext, tt.args.dry, buf); err != nil {
+					params := tt.args
+					params.args = []string{"golden"}
+					if err := run(params); err != nil {
 						t.Fatal(err)
 					}
 				}
@@ -235,4 +375,17 @@ func hashDirectories(t *testing.T, src, dest string) {
 		t.Errorf("src folder hash: %x", srcSum)
 		t.Errorf("dst folder hash: %x", dstSum)
 	}
+}
+
+func goosPathError(code int, p string) error {
+	var opName = "stat"
+	if runtime.GOOS == "windows" {
+		opName = "CreateFile"
+	}
+
+	return &Error{code: code, err: &os.PathError{
+		Op:   opName,
+		Path: p,
+		Err:  syscall.ENOENT,
+	}}
 }
