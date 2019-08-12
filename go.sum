@@ -110,8 +110,8 @@ gopkg.in/src-d/go-git-fixtures.v3 v3.3.0 h1:AxUOwLW3at53ysFqs0Lg+H+8KSQXl7AEHBvW
 gopkg.in/src-d/go-git-fixtures.v3 v3.3.0/go.mod h1:dLBcvytrw/TYZsNTWCnkNF2DSIlzWYqTe3rJR56Ac7g=
 gopkg.in/src-d/go-git.v4 v4.1.0 h1:ca/w7I2ziAYUrqcyq0Sm065FS1EUQKlzDCm09/RaF0o=
 gopkg.in/src-d/go-git.v4 v4.1.0/go.mod h1:CzbUWqMn4pvmvndg3gnh5iZFmSsbhyhUWdI0IQ60AQo=
-gopkg.in/src-d/go-license-detector.v2 v2.0.1 h1:F2BH4vJ2gn6ae+p/ageiSdd9x0EJosC2zwugI5DxvIo=
-gopkg.in/src-d/go-license-detector.v2 v2.0.1/go.mod h1:a1TpgXtfK7CO102qjOEAbDw50sUD7ObShWTvckedfoU=
+gopkg.in/src-d/go-license-detector.v2 v2.0.3 h1:mychKi+azlo/dAkrqq06y8jNfL0Tp5hDjjoJY8qrLlQ=
+gopkg.in/src-d/go-license-detector.v2 v2.0.3/go.mod h1:mAnAIV/xC2sPOZFM+5gcvIMHxjz/T17oX2P2yYS7QS4=
 gopkg.in/src-d/go-siva.v1 v1.5.0 h1:WowvbZTlz0SPoV7WNCGktPSi2yRK78HPyXl7wYqDeHE=
 gopkg.in/src-d/go-siva.v1 v1.5.0/go.mod h1:tk1jnIXawd/PTlRNWdr5V5lC0PttNJmu1fv7wt7IZlw=
 gopkg.in/warnings.v0 v0.1.2 h1:wFXVbFY8DY5/xOe1ECiWdKCzZlxgshcYVNkBHstARME=
